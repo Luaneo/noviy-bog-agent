@@ -1,0 +1,14 @@
+hydra-core
+langchain
+langchain-community
+langgraph
+pydantic
+pandas
+huggingface-hub
+gigachat
+python-dotenv
+chromadb
+sentence-transformers
+fastapi
+uvicorn
+langchain-huggingface
