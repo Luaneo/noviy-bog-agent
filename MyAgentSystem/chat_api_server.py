@@ -8,25 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 
-# Импорты для базы данных
-from database.database import get_db, create_tables
-from database.models import User, Chat, Message
-
-# Импорты для авторизации
-from auth.auth import get_or_create_user
-from auth.dependencies import get_current_user
-
-# Импорты для чатов
-from chat_service import (
-    create_chat, get_user_chats, get_chat_by_id, delete_chat,
-    add_message, get_chat_messages, get_chat_messages_for_context
-)
-
-# Импорты схем
-from schemas import (
-    UserLogin, UserResponse,
-    ChatCreate, ChatResponse, MessageResponse, ChatMessageRequest, ChatMessageResponse
-)
 
 # Импорты для RAG системы
 from agentsystem.chroma_db import load_existing_vectorstore, get_retriever
@@ -44,9 +25,6 @@ global_gigachat = None
 def initialize_database():
     """Инициализация базы данных при запуске"""
     global global_retriever, global_gigachat
-    
-    # Создаем таблицы
-    create_tables()
     
     # Инициализируем векторную базу данных
     try:
@@ -114,124 +92,6 @@ async def startup_event():
     """Инициализация при запуске сервера"""
     initialize_database()
 
-# ==================== АВТОРИЗАЦИЯ ====================
-
-@app.post("/auth/login", response_model=UserResponse)
-async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-    """Вход в систему"""
-    try:
-        # Ищем пользователя по ФИО
-        user = db.query(User).filter(User.fio == user_credentials.fio).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Пользователь не найден"
-            )
-        
-        # Проверяем пароль
-        from auth.auth import verify_password
-        if not verify_password(user_credentials.password, user.password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Неверный пароль"
-            )
-        
-        # Обновляем время последнего входа
-        from datetime import datetime
-        user.last_login = datetime.utcnow()
-        db.commit()
-        
-        return user
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка авторизации: {str(e)}"
-        )
-
-@app.post("/auth/me", response_model=UserResponse)
-async def get_current_user_info(
-    fio: str = Form(...),
-    password: str = Form(...),
-    current_user: User = Depends(get_current_user)
-):
-    """Получение информации о текущем пользователе"""
-    return current_user
-
-# ==================== ЧАТЫ ====================
-
-@app.post("/chats", response_model=ChatResponse)
-async def create_new_chat(
-    chat_data: ChatCreate,
-    fio: str = Form(...),
-    password: str = Form(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Создание нового чата"""
-    chat = create_chat(db, current_user.id, chat_data.title)
-    return chat
-
-@app.post("/chats/list", response_model=List[ChatResponse])
-async def get_chats(
-    fio: str = Form(...),
-    password: str = Form(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Получение списка чатов пользователя"""
-    chats = get_user_chats(db, current_user.id)
-    return chats
-
-@app.post("/chats/{chat_id}/info", response_model=ChatResponse)
-async def get_chat(
-    chat_id: int,
-    fio: str = Form(...),
-    password: str = Form(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Получение информации о чате"""
-    chat = get_chat_by_id(db, chat_id, current_user.id)
-    if not chat:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Чат не найден"
-        )
-    return chat
-
-@app.post("/chats/{chat_id}/delete")
-async def delete_chat_endpoint(
-    chat_id: int,
-    fio: str = Form(...),
-    password: str = Form(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Удаление чата"""
-    success = delete_chat(db, chat_id, current_user.id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Чат не найден"
-        )
-    return {"message": "Чат удален"}
-
-@app.post("/chats/{chat_id}/messages", response_model=List[MessageResponse])
-async def get_messages(
-    chat_id: int,
-    fio: str = Form(...),
-    password: str = Form(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Получение сообщений чата"""
-    messages = get_chat_messages(db, chat_id, current_user.id)
-    return messages
-
-# ==================== RAG СИСТЕМА ====================
 
 def run_rag_system_fast(question: str):
     """Быстрая версия RAG системы с предзагруженным retriever"""
@@ -278,6 +138,9 @@ def classify_question(question: str):
     classification_prompt = f"""
     Ты - помощник IT-поддержки. Твоя задача классифицировать вопрос пользователя и определить отдел в который его перенаправить, какая команда и поддержка могла бы помочь решить этот вопрос.
     Отвечай дружелюбно, кратко и по делу.
+
+
+
 
     Вопрос пользователя:
     {question}
@@ -328,6 +191,7 @@ async def classify_endpoint(messages: List[dict]):
 async def stream_question(messages: List[dict]):
     def generate_stream():
         try:
+
             question = messages[-1]["message"]
             
             retrieved_docs = global_retriever.invoke(question)
@@ -335,8 +199,14 @@ async def stream_question(messages: List[dict]):
             
             prompt = f"""
             Ты - помощник IT-поддержки. Отвечай на основе базы знаний:
-            {docs_content}
-            
+            {docs_content}.
+
+            У тебя есть возможность вызывать на Frontend кнопки для различных действий:
+                Функция для показа кнопки СМЕНА ПАРОЛЯ, чтобы ее вызвать добавь в сообщение которое ты сгенерируешь добавь <ChangePassword /> (но добавь ее в самом конце, чтобы в тексте оно не фигурировало, просто этот текст в конце без обьяснений)
+
+            Функцию надо вызывать, когда пользователь просит помочь ему с восстановлением, поиском сменой пароля в системе, но при этом также сгенерировать качественный ответ.
+
+
             Вопрос: {question}
             """
             
@@ -353,7 +223,7 @@ async def stream_question(messages: List[dict]):
 
 
 
-@app.post("/question", response_model=ChatMessageResponse)
+@app.post("/question")
 async def process_question(messages: List[dict]):
     """Обработка вопроса пользователя через LangGraph"""
     
@@ -389,10 +259,10 @@ async def process_question(messages: List[dict]):
         # Обрабатываем вопрос через LangGraph RAG систему
         answer = run_rag_system_fast(question)
         
-        return ChatMessageResponse(
-            answer=answer,
-            classification=classification
-        )
+        return {
+            "answer": answer,
+            "classification": classification
+        }
         
     except Exception as e:
         raise HTTPException(
