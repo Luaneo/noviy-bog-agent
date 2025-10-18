@@ -3,10 +3,9 @@
 FastAPI сервер с системой чатов и авторизации
 """
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from datetime import timedelta
 from typing import List
 
 # Импорты для базы данных
@@ -14,7 +13,7 @@ from database.database import get_db, create_tables
 from database.models import User, Chat, Message
 
 # Импорты для авторизации
-from auth.auth import authenticate_user, create_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from auth.auth import get_or_create_user
 from auth.dependencies import get_current_user
 
 # Импорты для чатов
@@ -25,7 +24,7 @@ from chat_service import (
 
 # Импорты схем
 from schemas import (
-    UserRegister, UserLogin, Token, UserResponse,
+    UserLogin, UserResponse,
     ChatCreate, ChatResponse, MessageResponse, ChatMessageRequest, ChatMessageResponse
 )
 
@@ -74,51 +73,47 @@ async def startup_event():
 
 # ==================== АВТОРИЗАЦИЯ ====================
 
-@app.post("/auth/register", response_model=UserResponse)
-async def register(user_data: UserRegister, db: Session = Depends(get_db)):
-    """Регистрация нового пользователя"""
+@app.post("/auth/login", response_model=UserResponse)
+async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
+    """Вход в систему"""
     try:
-        user = create_user(
-            db=db,
-            fio=user_data.fio,
-            password=user_data.password,
-            work_group=user_data.work_group
-        )
+        # Ищем пользователя по ФИО
+        user = db.query(User).filter(User.fio == user_credentials.fio).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Пользователь не найден"
+            )
+        
+        # Проверяем пароль
+        from auth.auth import verify_password
+        if not verify_password(user_credentials.password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Неверный пароль"
+            )
+        
+        # Обновляем время последнего входа
+        from datetime import datetime
+        user.last_login = datetime.utcnow()
+        db.commit()
+        
         return user
+        
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка при создании пользователя: {str(e)}"
+            detail=f"Ошибка авторизации: {str(e)}"
         )
 
-@app.post("/auth/login", response_model=Token)
-async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-    """Вход в систему"""
-    user = authenticate_user(db, user_credentials.fio, user_credentials.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверные учетные данные",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # Обновляем время последнего входа
-    from datetime import datetime
-    user.last_login = datetime.utcnow()
-    db.commit()
-    
-    # Создаем токен
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": str(user.id)}, expires_delta=access_token_expires
-    )
-    
-    return {"access_token": access_token, "token_type": "bearer"}
-
-@app.get("/auth/me", response_model=UserResponse)
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
+@app.post("/auth/me", response_model=UserResponse)
+async def get_current_user_info(
+    fio: str = Form(...),
+    password: str = Form(...),
+    current_user: User = Depends(get_current_user)
+):
     """Получение информации о текущем пользователе"""
     return current_user
 
@@ -127,6 +122,8 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 @app.post("/chats", response_model=ChatResponse)
 async def create_new_chat(
     chat_data: ChatCreate,
+    fio: str = Form(...),
+    password: str = Form(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -134,8 +131,10 @@ async def create_new_chat(
     chat = create_chat(db, current_user.id, chat_data.title)
     return chat
 
-@app.get("/chats", response_model=List[ChatResponse])
+@app.post("/chats/list", response_model=List[ChatResponse])
 async def get_chats(
+    fio: str = Form(...),
+    password: str = Form(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -143,9 +142,11 @@ async def get_chats(
     chats = get_user_chats(db, current_user.id)
     return chats
 
-@app.get("/chats/{chat_id}", response_model=ChatResponse)
+@app.post("/chats/{chat_id}/info", response_model=ChatResponse)
 async def get_chat(
     chat_id: int,
+    fio: str = Form(...),
+    password: str = Form(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -158,9 +159,11 @@ async def get_chat(
         )
     return chat
 
-@app.delete("/chats/{chat_id}")
+@app.post("/chats/{chat_id}/delete")
 async def delete_chat_endpoint(
     chat_id: int,
+    fio: str = Form(...),
+    password: str = Form(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -173,9 +176,11 @@ async def delete_chat_endpoint(
         )
     return {"message": "Чат удален"}
 
-@app.get("/chats/{chat_id}/messages", response_model=List[MessageResponse])
+@app.post("/chats/{chat_id}/messages", response_model=List[MessageResponse])
 async def get_messages(
     chat_id: int,
+    fio: str = Form(...),
+    password: str = Form(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -239,6 +244,8 @@ def run_rag_system_fast(question: str):
 @app.post("/question", response_model=ChatMessageResponse)
 async def process_question(
     request: ChatMessageRequest,
+    fio: str = Form(...),
+    password: str = Form(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -312,11 +319,27 @@ async def root():
         "message": "IT Support Chat System API",
         "version": "2.0.0",
         "features": [
-            "Авторизация пользователей",
+            "Автоматическая регистрация/авторизация по email",
             "Управление чатами",
             "RAG система поддержки",
             "История сообщений"
-        ]
+        ],
+        "endpoints": {
+            "auth": {
+                "POST /auth/login": "Вход/регистрация (email + пароль + ФИО + рабочая группа)",
+                "GET /auth/me": "Информация о текущем пользователе"
+            },
+            "chats": {
+                "POST /chats": "Создать чат",
+                "GET /chats": "Список чатов",
+                "GET /chats/{id}": "Информация о чате",
+                "DELETE /chats/{id}": "Удалить чат",
+                "GET /chats/{id}/messages": "История сообщений"
+            },
+            "question": {
+                "POST /question": "Отправить сообщение в чат"
+            }
+        }
     }
 
 if __name__ == "__main__":

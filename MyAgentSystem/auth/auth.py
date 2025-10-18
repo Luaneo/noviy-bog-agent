@@ -3,20 +3,13 @@
 Система авторизации и аутентификации
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
-from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from database.models import User
 from database.database import get_db
-import os
-
-# Настройки JWT
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # Настройки хеширования паролей
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -27,31 +20,15 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Хеширование пароля"""
+    # Ограничиваем длину пароля до 72 байт для bcrypt
+    if len(password.encode('utf-8')) > 72:
+        password = password[:72]
     return pwd_context.hash(password)
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """Создание JWT токена"""
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
 
-def verify_token(token: str) -> Optional[dict]:
-    """Проверка JWT токена"""
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except JWTError:
-        return None
-
-def authenticate_user(db: Session, fio: str, password: str) -> Optional[User]:
+def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     """Аутентификация пользователя"""
-    user = db.query(User).filter(User.fio == fio).first()
+    user = db.query(User).filter(User.email == email).first()
     if not user:
         return None
     if not verify_password(password, user.password_hash):
@@ -62,19 +39,20 @@ def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
     """Получение пользователя по ID"""
     return db.query(User).filter(User.id == user_id).first()
 
-def create_user(db: Session, fio: str, password: str, work_group: str) -> User:
+def create_user(db: Session, email: str, fio: str, password: str, work_group: str) -> User:
     """Создание нового пользователя"""
-    # Проверяем, что пользователь с таким ФИО не существует
-    existing_user = db.query(User).filter(User.fio == fio).first()
+    # Проверяем, что пользователь с таким email не существует
+    existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Пользователь с таким ФИО уже существует"
+            detail="Пользователь с таким email уже существует"
         )
     
     # Создаем нового пользователя
     hashed_password = get_password_hash(password)
     db_user = User(
+        email=email,
         fio=fio,
         password_hash=hashed_password,
         work_group=work_group
@@ -84,3 +62,27 @@ def create_user(db: Session, fio: str, password: str, work_group: str) -> User:
     db.commit()
     db.refresh(db_user)
     return db_user
+
+def get_or_create_user(db: Session, email: str, password: str, fio: str, work_group: str) -> User:
+    """Получить существующего пользователя или создать нового"""
+    # Сначала пытаемся найти пользователя
+    user = db.query(User).filter(User.email == email).first()
+    
+    if user:
+        # Пользователь существует, проверяем пароль
+        if verify_password(password, user.password_hash):
+            return user
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Неверный пароль"
+            )
+    else:
+        # Пользователя нет, создаем нового
+        if not fio or not work_group:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для создания нового пользователя необходимо указать ФИО и рабочую группу"
+            )
+        
+        return create_user(db, email, fio, password, work_group)

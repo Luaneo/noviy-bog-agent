@@ -8,18 +8,9 @@ from typing import List, Optional
 from datetime import datetime
 
 # Схемы для авторизации
-class UserRegister(BaseModel):
-    fio: str
-    password: str
-    work_group: str
-
 class UserLogin(BaseModel):
     fio: str
     password: str
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
 
 class UserResponse(BaseModel):
     id: int

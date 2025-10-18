@@ -3,47 +3,32 @@
 FastAPI зависимости для авторизации
 """
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, HTTPException, status, Form
 from sqlalchemy.orm import Session
 from database.database import get_db
 from database.models import User
-from .auth import verify_token
-
-# Схема авторизации
-security = HTTPBearer()
+from .auth import verify_password
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    fio: str = Form(...),
+    password: str = Form(...),
     db: Session = Depends(get_db)
 ) -> User:
-    """Получение текущего пользователя из JWT токена"""
+    """Получение текущего пользователя по ФИО и паролю"""
     
-    # Проверяем токен
-    payload = verify_token(credentials.credentials)
-    if payload is None:
+    # Ищем пользователя по ФИО
+    user = db.query(User).filter(User.fio == fio).first()
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Недействительный токен авторизации",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Пользователь не найден"
         )
     
-    # Получаем user_id из токена
-    user_id: int = payload.get("sub")
-    if user_id is None:
+    # Проверяем пароль
+    if not verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Недействительный токен авторизации",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # Получаем пользователя из базы данных
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Пользователь не найден",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Неверный пароль"
         )
     
     if not user.is_active:
