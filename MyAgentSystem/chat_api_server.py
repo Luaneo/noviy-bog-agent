@@ -31,7 +31,7 @@ global_gigachat = None
 def initialize_database():
     """Инициализация базы данных при запуске"""
     global global_retriever, global_gigachat
-
+    
     # Инициализируем векторную базу данных
     try:
         from agentsystem.chroma_db import load_existing_vectorstore, get_retriever
@@ -102,8 +102,6 @@ async def startup_event():
     initialize_database()
 
 
-# ==================== RAG СИСТЕМА ====================
-
 def run_rag_system_fast(question: str):
     """Быстрая версия RAG системы с предзагруженным retriever"""
     global global_retriever, global_gigachat
@@ -150,6 +148,9 @@ def classify_question(question: str):
     classification_prompt = f"""
     Ты - помощник IT-поддержки. Твоя задача классифицировать вопрос пользователя и определить отдел в который его перенаправить, какая команда и поддержка могла бы помочь решить этот вопрос.
     Отвечай дружелюбно, кратко и по делу.
+
+
+
 
     Вопрос пользователя:
     {question}
@@ -201,6 +202,7 @@ async def classify_endpoint(messages: List[dict]):
 async def stream_question(messages: List[dict]):
     def generate_stream():
         try:
+
             question = messages[-1]["message"]
 
             retrieved_docs = global_retriever.invoke(question)
@@ -208,8 +210,14 @@ async def stream_question(messages: List[dict]):
 
             prompt = f"""
             Ты - помощник IT-поддержки. Отвечай на основе базы знаний:
-            {docs_content}
-            
+            {docs_content}.
+
+            У тебя есть возможность вызывать на Frontend кнопки для различных действий:
+                Функция для показа кнопки СМЕНА ПАРОЛЯ, чтобы ее вызвать добавь в сообщение которое ты сгенерируешь добавь <ChangePassword /> (но добавь ее в самом конце, чтобы в тексте оно не фигурировало, просто этот текст в конце без обьяснений)
+
+            Функцию надо вызывать, когда пользователь просит помочь ему с восстановлением, поиском сменой пароля в системе, но при этом также сгенерировать качественный ответ.
+
+
             Вопрос: {question}
             """
 
@@ -225,7 +233,7 @@ async def stream_question(messages: List[dict]):
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
 
 
-@app.post("/question", response_model=ChatMessageResponse)
+@app.post("/question")
 async def process_question(messages: List[dict]):
     """Обработка вопроса пользователя через LangGraph"""
 
@@ -260,12 +268,12 @@ async def process_question(messages: List[dict]):
 
         # Обрабатываем вопрос через LangGraph RAG систему
         answer = run_rag_system_fast(question)
-
-        return ChatMessageResponse(
-            answer=answer,
-            classification=classification
-        )
-
+        
+        return {
+            "answer": answer,
+            "classification": classification
+        }
+        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
