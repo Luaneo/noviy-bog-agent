@@ -32,7 +32,7 @@ export default function Home() {
     {
       by: "agent",
       message:
-        "# Привет!\nЯ — агент техподдержки.\n\nОпишите проблему и я помогу:\n- С доступом\n- С настройками ПО\n\nСпасибо!",
+        "# Привет!\nЯ — агент техподдержки.\n\nОпишите проблему и я помогу:\n- С доступом\n- С настройками ПО",
     },
   ]);
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
@@ -53,19 +53,21 @@ export default function Home() {
 
     setStatus("pending");
     const response = await fetch(
-      `http://localhost:8000/question/stream`,
+      `https://97e1b0bcfa7c.ngrok-free.app/question/stream`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify([
-          ...messages,
-          {
-            by: "user",
-            message: question,
-          },
-        ]),
+        body: JSON.stringify(
+          [
+            ...messages,
+            {
+              by: "user",
+              message: question,
+            },
+          ].slice(2)
+        ),
       }
     );
     if (!response.ok) {
@@ -122,13 +124,13 @@ export default function Home() {
 
   return (
     <div className="p-5 flex flex-col items-center min-h-[100vh] mb-44">
-      <div className="flex justify-between max-w-2xl w-full mb-5">
+      <div className="flex justify-between max-w-2xl w-full mb-5 fixed top-5">
         <div>
           <Logo />
         </div>
         <ThemeToggle />
       </div>
-      <div className="flex flex-col gap-2 max-w-2xl w-full">
+      <div className="flex flex-col gap-2 max-w-2xl w-full mt-15">
         {messages.map((message, index) => (
           <div key={index} className="flex w-full">
             {message.by === "agent" ? (
@@ -177,7 +179,7 @@ export default function Home() {
             <InputGroupButton
               variant={status === "idle" ? "default" : "ghost"}
               className={twMerge(
-                "rounded-full",
+                "rounded-full mr-2",
                 status === "idle" ? "cursor-pointer" : "cursor-wait"
               )}
               size="icon-xs"
