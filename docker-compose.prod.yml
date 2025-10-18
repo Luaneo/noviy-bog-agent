@@ -11,7 +11,6 @@ services:
       - "8000:8000"
     environment:
       - GIGACHAT_CREDENTIALS=${GIGACHAT_CREDENTIALS}
-      - DATABASE_URL=sqlite:///./chats.db
     volumes:
       - agent-data:/app/chroma_db
       - agent-db:/app/database_data
