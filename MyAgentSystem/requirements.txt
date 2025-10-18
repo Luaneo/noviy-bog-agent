@@ -1,6 +1,9 @@
 hydra-core
 langchain
 langchain-community
+langchain-huggingface
+langchain-chroma
+langchain-text-splitters
 langgraph
 pydantic
 pandas
@@ -11,4 +14,13 @@ chromadb
 sentence-transformers
 fastapi
 uvicorn
-langchain-huggingface
+pypdf
+beautifulsoup4
+markdown
+pyngrok
+requests
+sqlalchemy
+alembic
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart

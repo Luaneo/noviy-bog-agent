@@ -1,7 +1,6 @@
 from langgraph.graph import START, END, StateGraph
 from langchain_core.documents import Document
 from pydantic import BaseModel
-from langchain import hub
 from typing import List, Optional
 import os
 from dotenv import load_dotenv
@@ -18,6 +17,7 @@ gigachat = GigaChat(
 )
 
 class State(BaseModel):
+    tech_support_class : str
     question: str
     context: List[Document] = []
     answer: str = ""
@@ -36,7 +36,7 @@ def retrieve(state: State):
         retriever = get_retriever(vectorstore, k=3)
         state.retriever = retriever
     
-    retrieved_docs = state.retriever.get_relevant_documents(state.question)
+    retrieved_docs = state.retriever.invoke(state.question)
     return {'context': retrieved_docs, 'retriever': state.retriever}
 
 def generate(state: State):
@@ -58,20 +58,35 @@ def generate(state: State):
     
     return {'answer': response.choices[0].message.content}
 
-def should_continue(state: State):
-    """Определяет, нужно ли продолжать выполнение"""
-    if state.answer:
-        return "end"
-    else:
-        return "continue"
+
+def classification_support(state : State):
+    """ Определяет тип поддержки в которую нужно перенаправить запрос """
+
+    prompt = f"""
+    Ты - помощник IT-поддержки. Твоя задача классифицировать вопрос пользователя и определить отдел в который его перенаправить, какая команда и поддержка могла бы помочь решить этот вопрос.
+    Отвечай дружелюбно, кратко и по делу.
+
+    Вопрос пользователя:
+    {state.question}
+    """
+
+
+    response = gigachat.chat(prompt)
+
+
+    return {'tech_support_class' : response.choices[0].message.content}
+
 
 workflow = StateGraph(State)
 
+
+workflow.add_node("classification_support", classification_support)
 workflow.add_node("retrieve", retrieve)
 workflow.add_node("generate", generate)
 
 
 workflow.add_edge(START, "retrieve")
+workflow.add_edge(START, "classification_support")
 workflow.add_edge("retrieve", "generate")
 workflow.add_edge("generate", END)
 
@@ -79,12 +94,13 @@ app = workflow.compile()
 
 def run_rag_system(question: str):
     """Запускает RAG систему для ответа на вопрос"""
-    initial_state = State(question=question)
+    initial_state = State(question=question, tech_support_class="")
     result = app.invoke(initial_state)
-    return result["answer"]
+    return result["answer"], result["tech_support_class"]
 
 if __name__ == "__main__":
     test_question = "Как решить проблему с npm ERR! EACCES при сборке?"
-    answer = run_rag_system(test_question)
+    answer, classification = run_rag_system(test_question)
     print(f"Вопрос: {test_question}")
+    print(f"Классификация: {classification}")
     print(f"Ответ: {answer}")

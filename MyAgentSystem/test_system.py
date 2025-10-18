@@ -13,11 +13,7 @@ def test_questions():
     """Тестирует систему с различными вопросами"""
     
     test_cases = [
-        "Как решить проблему с npm ERR! EACCES при сборке?",
-        "Что делать с Docker ImagePullBackOff?",
-        "Как настроить GitLab CI/CD runner?",
-        "Проблема с AWS Console аутентификацией",
-        "Как компенсировать такси в ночную смену?"
+        "Как решить проблему с npm ERR! EACCES при сборке?"
     ]
     
     print("🤖 Тестирование IT Support RAG System")
@@ -28,7 +24,8 @@ def test_questions():
         print("-" * 30)
         
         try:
-            answer = run_rag_system(question)
+            answer, classification = run_rag_system(question)
+            print(f"🏷️  Классификация: {classification}")
             print(f"✅ Ответ: {answer}")
         except Exception as e:
             print(f"❌ Ошибка: {e}")
