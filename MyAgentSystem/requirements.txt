@@ -17,6 +17,7 @@ uvicorn
 pypdf
 beautifulsoup4
 markdown
+matplotlib
 pyngrok
 requests
 sqlalchemy
