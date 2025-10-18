@@ -53,7 +53,7 @@ export default function Home() {
 
     setStatus("pending");
     const response = await fetch(
-      "https://127a24dc1fc4.ngrok-free.app/question/stream",
+      `http://localhost:8000/question/stream`,
       {
         method: "POST",
         headers: {
