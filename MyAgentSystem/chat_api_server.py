@@ -32,24 +32,56 @@ from schemas import (
 from agentsystem.chroma_db import load_existing_vectorstore, get_retriever
 from gigachat import GigaChat
 import os
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Глобальная переменная для retriever
+# Глобальные переменные для предзагруженных компонентов
 global_retriever = None
+global_gigachat = None
 
 def initialize_database():
     """Инициализация базы данных при запуске"""
-    global global_retriever
+    global global_retriever, global_gigachat
     
     # Создаем таблицы
     create_tables()
     
-    # Инициализируем RAG систему
-    vectorstore = load_existing_vectorstore()
-    if vectorstore is not None:
+    # Инициализируем векторную базу данных
+    try:
+        from agentsystem.chroma_db import load_existing_vectorstore, get_retriever
+        
+        # Загружаем существующую векторную базу данных
+        vectorstore = load_existing_vectorstore()
+        if vectorstore is None:
+            print("📚 Создаем новую векторную базу данных...")
+            from agentsystem.parsers import load_and_split_documents
+            from agentsystem.chroma_db import create_vectorstore
+            
+            documents = load_and_split_documents()
+            vectorstore = create_vectorstore(documents)
+        
+        # Создаем retriever
         global_retriever = get_retriever(vectorstore, k=3)
+        print("✅ ChromaDB векторная база данных инициализирована")
+        
+    except Exception as e:
+        print(f"❌ Ошибка инициализации ChromaDB: {e}")
+        global_retriever = None
+    
+    # Инициализируем GigaChat
+    try:
+        global_gigachat = GigaChat(
+            credentials=os.getenv("GIGACHAT_CREDENTIALS"),
+            verify_ssl_certs=False,
+            timeout=30
+        )
+        print("✅ GigaChat инициализирован")
+        
+    except Exception as e:
+        print(f"❌ Ошибка инициализации GigaChat: {e}")
+        global_gigachat = None
 
 app = FastAPI(
     title="IT Support Chat System API",
@@ -60,11 +92,22 @@ app = FastAPI(
 # Настройка CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "*",  # Разрешаем все origins для ngrok
+        "http://localhost:3000",  # React dev server
+        "http://localhost:8080",  # Vue dev server
+        "https://*.ngrok.io",     # Ngrok URLs
+        "https://*.ngrok-free.app" # Новые ngrok URLs
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """Обработчик для CORS preflight запросов"""
+    return {"message": "OK"}
 
 @app.on_event("startup")
 async def startup_event():
@@ -192,25 +235,46 @@ async def get_messages(
 
 def run_rag_system_fast(question: str):
     """Быстрая версия RAG системы с предзагруженным retriever"""
-    from gigachat import GigaChat
-    import os
-    from dotenv import load_dotenv
+    global global_retriever, global_gigachat
     
-    load_dotenv()
-    
-    gigachat = GigaChat(
-        credentials=os.getenv("GIGACHAT_CREDENTIALS"),
-        model="GigaChat-Max",
-        verify_ssl_certs=False
-    )
-    
-    # Получаем контекст через предзагруженный retriever
     if global_retriever is None:
-        return "Ошибка: База данных не инициализирована", "Системная ошибка"
+        return "Ошибка: ChromaDB не инициализирован"
     
-    retrieved_docs = global_retriever.invoke(question)
+    if global_gigachat is None:
+        return "Ошибка: GigaChat не инициализирован"
     
-    # Классификация
+    try:
+        # Получаем релевантные документы
+        retrieved_docs = global_retriever.invoke(question)
+        
+        # Формируем контекст
+        docs_content = "\n\n".join([doc.page_content for doc in retrieved_docs])
+        
+        # Генерируем ответ
+        prompt = f"""
+        Ты - помощник IT-поддержки. Отвечай на вопросы пользователей на основе предоставленной базы знаний.
+        
+        База знаний:
+        {docs_content}
+        
+        Вопрос пользователя: {question}
+        
+        Ответь максимально подробно и полезно. Если в базе знаний нет информации, честно скажи об этом.
+        """
+        
+        response = global_gigachat.chat(prompt)
+        return response.choices[0].message.content
+        
+    except Exception as e:
+        return f"Ошибка генерации ответа: {str(e)}"
+
+def classify_question(question: str):
+    """Классификация вопроса с использованием предзагруженного GigaChat"""
+    global global_gigachat
+    
+    if global_gigachat is None:
+        return "Ошибка: GigaChat не инициализирован"
+    
     classification_prompt = f"""
     Ты - помощник IT-поддержки. Твоя задача классифицировать вопрос пользователя и определить отдел в который его перенаправить, какая команда и поддержка могла бы помочь решить этот вопрос.
     Отвечай дружелюбно, кратко и по делу.
@@ -219,55 +283,89 @@ def run_rag_system_fast(question: str):
     {question}
     """
     
-    classification_response = gigachat.chat(classification_prompt)
-    classification = classification_response.choices[0].message.content
-    
-    # Генерация ответа
-    docs_content = "\n\n".join([doc.page_content for doc in retrieved_docs])
-    
-    answer_prompt = f"""
-    Ты - помощник IT-поддержки. Отвечай на вопросы пользователей на основе предоставленной базы знаний.
-    
-    База знаний:
-    {docs_content}
-    
-    Вопрос пользователя: {question}
-    
-    Ответь максимально подробно и полезно. Если в базе знаний нет информации, честно скажи об этом.
-    """
-    
-    answer_response = gigachat.chat(answer_prompt)
-    answer = answer_response.choices[0].message.content
-    
-    return answer, classification
+    try:
+        classification_response = global_gigachat.chat(classification_prompt)
+        return classification_response.choices[0].message.content
+    except Exception as e:
+        return f"Ошибка классификации: {str(e)}"
 
-@app.post("/question", response_model=ChatMessageResponse)
-async def process_question(
-    request: ChatMessageRequest,
-    fio: str = Form(...),
-    password: str = Form(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Обработка вопроса пользователя с сохранением в чат"""
-    
-    # Проверяем, что чат принадлежит пользователю
-    chat = get_chat_by_id(db, request.chat_id, current_user.id)
-    if not chat:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Чат не найден"
-        )
+@app.post("/classify")
+async def classify_endpoint(messages: List[dict]):
+    """Классификация вопроса пользователя"""
     
     # Проверяем, что есть сообщения
-    if not request.messages:
+    if not messages:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Список сообщений не может быть пустым"
         )
     
     # Берем последнее сообщение пользователя
-    last_message = request.messages[-1]
+    last_message = messages[-1]
+    
+    # Извлекаем вопрос
+    question = last_message.get("message", "").strip()
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Вопрос не может быть пустым"
+        )
+    
+    try:
+        # Классифицируем вопрос
+        classification = classify_question(question)
+        
+        return {"classification": classification}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка классификации: {str(e)}"
+        )
+
+
+@app.post("/question/stream")
+async def stream_question(messages: List[dict]):
+    def generate_stream():
+        try:
+            question = messages[-1]["message"]
+            
+            retrieved_docs = global_retriever.invoke(question)
+            docs_content = "\n\n".join([doc.page_content for doc in retrieved_docs])
+            
+            prompt = f"""
+            Ты - помощник IT-поддержки. Отвечай на основе базы знаний:
+            {docs_content}
+            
+            Вопрос: {question}
+            """
+            
+            for chunk in global_gigachat.stream(prompt):
+                if chunk.choices[0].delta.content:
+                    yield f"{chunk.choices[0].delta.content}"
+            
+        except Exception as e:
+            yield f"data: Ошибка: {str(e)}\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(generate_stream(), media_type="text/event-stream")
+
+
+
+@app.post("/question", response_model=ChatMessageResponse)
+async def process_question(messages: List[dict]):
+    """Обработка вопроса пользователя через LangGraph"""
+    
+    # Проверяем, что есть сообщения
+    if not messages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Список сообщений не может быть пустым"
+        )
+    
+    # Берем последнее сообщение пользователя
+    last_message = messages[-1]
     
     # Проверяем, что последнее сообщение от пользователя
     if last_message.get("by") != "user":
@@ -284,22 +382,12 @@ async def process_question(
             detail="Вопрос не может быть пустым"
         )
     
-    # Проверяем инициализацию базы данных
-    if global_retriever is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="База данных не инициализирована"
-        )
-    
     try:
-        # Обрабатываем вопрос через RAG систему
-        answer, classification = run_rag_system_fast(question)
+        # Классифицируем вопрос
+        classification = classify_question(question)
         
-        # Сохраняем сообщение пользователя
-        add_message(db, request.chat_id, "user", question)
-        
-        # Сохраняем ответ агента
-        add_message(db, request.chat_id, "agent", answer, classification)
+        # Обрабатываем вопрос через LangGraph RAG систему
+        answer = run_rag_system_fast(question)
         
         return ChatMessageResponse(
             answer=answer,
@@ -309,7 +397,7 @@ async def process_question(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Внутренняя ошибка сервера: {str(e)}"
+            detail=f"Ошибка обработки вопроса: {str(e)}"
         )
 
 @app.get("/")

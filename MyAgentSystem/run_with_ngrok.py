@@ -1,84 +1,53 @@
 #!/usr/bin/env python3
 """
-Скрипт для запуска FastAPI сервера с ngrok туннелем
+Запуск сервера с ngrok туннелем
 """
 
-import subprocess
-import time
-import threading
 import uvicorn
-import sys
-import os
-import signal
-import requests
+import pyngrok
 from pyngrok import ngrok
+import os
+from dotenv import load_dotenv
 
-# Добавляем путь к модулям
-sys.path.append(os.path.dirname(__file__))
-
-def start_fastapi():
-    """Запускает FastAPI сервер"""
-    uvicorn.run(
-        "api_server:app",
-        host="127.0.0.1",
-        port=8000,
-        log_level="info"
-    )
-
-def check_server_ready():
-    """Проверяет, готов ли сервер"""
-    for _ in range(30):  # Ждем до 30 секунд
-        try:
-            response = requests.get("http://127.0.0.1:8000/", timeout=1)
-            if response.status_code == 200:
-                return True
-        except:
-            pass
-        time.sleep(1)
-    return False
+load_dotenv()
 
 def main():
-    print("🚀 Запуск IT Support RAG System с ngrok")
-    print("=" * 50)
+    """Запуск сервера с ngrok"""
     
-    # Запускаем FastAPI в отдельном потоке
-    print("📡 Запуск FastAPI сервера...")
-    fastapi_thread = threading.Thread(target=start_fastapi, daemon=True)
-    fastapi_thread.start()
+    # Получаем ngrok токен из переменных окружения
+    ngrok_token = os.getenv("NGROK_AUTHTOKEN")
+    if ngrok_token:
+        ngrok.set_auth_token(ngrok_token)
+        print("✅ Ngrok токен установлен")
+    else:
+        print("⚠️ NGROK_AUTHTOKEN не найден в .env файле")
+        print("   Получите токен на https://dashboard.ngrok.com/get-started/your-authtoken")
     
-    # Ждем, пока сервер запустится
-    print("⏳ Ожидание запуска сервера...")
-    if not check_server_ready():
-        print("❌ Не удалось запустить сервер")
+    # Создаем туннель
+    try:
+        public_url = ngrok.connect(8000)
+        print(f"🌐 Ngrok туннель создан: {public_url}")
+        print(f"📡 API доступен по адресу: {public_url}/docs")
+        print(f"🔗 Эндпоинт /question: {public_url}/question")
+        print(f"🔗 Эндпоинт /classify: {public_url}/classify")
+    except Exception as e:
+        print(f"❌ Ошибка создания ngrok туннеля: {e}")
         return
     
-    print("✅ Сервер запущен на http://127.0.0.1:8000")
-    
-    # Создаем ngrok туннель
-    print("🌐 Создание ngrok туннеля...")
+    # Запускаем сервер
     try:
-        # Создаем HTTP туннель
-        public_url = ngrok.connect(8000)
-        print(f"🔗 Публичный URL: {public_url}")
-        print(f"📱 API доступен по адресу: {public_url}/question")
-        print(f"📚 Swagger UI: {public_url}/docs")
-        print()
-        print("💡 Для остановки нажмите Ctrl+C")
-        print("=" * 50)
-        
-        # Держим программу запущенной
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\n🛑 Остановка сервера...")
-            ngrok.disconnect(public_url)
-            ngrok.kill()
-            print("✅ Сервер остановлен")
-            
-    except Exception as e:
-        print(f"❌ Ошибка при создании ngrok туннеля: {e}")
-        print("💡 Убедитесь, что ngrok установлен: pip install pyngrok")
+        print("\n🚀 Запуск FastAPI сервера...")
+        uvicorn.run(
+            "chat_api_server:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=False,
+            log_level="info"
+        )
+    except KeyboardInterrupt:
+        print("\n🛑 Остановка сервера...")
+        ngrok.disconnect(public_url)
+        ngrok.kill()
 
 if __name__ == "__main__":
     main()

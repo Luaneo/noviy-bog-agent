@@ -12,7 +12,6 @@ load_dotenv()
 
 gigachat = GigaChat(
     credentials=os.getenv("GIGACHAT_CREDENTIALS"),
-    model="GigaChat-Max",
     verify_ssl_certs=False
 )
 
@@ -80,13 +79,10 @@ def classification_support(state : State):
 workflow = StateGraph(State)
 
 
-workflow.add_node("classification_support", classification_support)
 workflow.add_node("retrieve", retrieve)
 workflow.add_node("generate", generate)
 
-
 workflow.add_edge(START, "retrieve")
-workflow.add_edge(START, "classification_support")
 workflow.add_edge("retrieve", "generate")
 workflow.add_edge("generate", END)
 
@@ -96,11 +92,10 @@ def run_rag_system(question: str):
     """Запускает RAG систему для ответа на вопрос"""
     initial_state = State(question=question, tech_support_class="")
     result = app.invoke(initial_state)
-    return result["answer"], result["tech_support_class"]
+    return result["answer"]
 
 if __name__ == "__main__":
     test_question = "Как решить проблему с npm ERR! EACCES при сборке?"
-    answer, classification = run_rag_system(test_question)
+    answer = run_rag_system(test_question)
     print(f"Вопрос: {test_question}")
-    print(f"Классификация: {classification}")
     print(f"Ответ: {answer}")

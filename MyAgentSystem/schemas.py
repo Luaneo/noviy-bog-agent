@@ -57,5 +57,4 @@ class ChatMessageResponse(BaseModel):
 
 # Схема для запроса с чатом
 class ChatMessageRequest(BaseModel):
-    chat_id: int
     messages: List[dict]  # Массив сообщений чата
