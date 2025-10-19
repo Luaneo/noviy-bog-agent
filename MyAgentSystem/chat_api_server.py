@@ -8,12 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 
-# Импорты схем
-from schemas import (
-    UserLogin, UserResponse,
-    ChatCreate, ChatResponse, MessageResponse, ChatMessageRequest, ChatMessageResponse
-)
-
 # Импорты для RAG системы
 from agentsystem.chroma_db import load_existing_vectorstore, get_retriever
 from gigachat import GigaChat
@@ -31,7 +25,7 @@ global_gigachat = None
 def initialize_database():
     """Инициализация базы данных при запуске"""
     global global_retriever, global_gigachat
-    
+
     # Инициализируем векторную базу данных
     try:
         from agentsystem.chroma_db import load_existing_vectorstore, get_retriever
@@ -100,42 +94,6 @@ async def options_handler(path: str):
 async def startup_event():
     """Инициализация при запуске сервера"""
     initialize_database()
-
-
-def run_rag_system_fast(question: str):
-    """Быстрая версия RAG системы с предзагруженным retriever"""
-    global global_retriever, global_gigachat
-
-    if global_retriever is None:
-        return "Ошибка: ChromaDB не инициализирован"
-
-    if global_gigachat is None:
-        return "Ошибка: GigaChat не инициализирован"
-
-    try:
-        # Получаем релевантные документы
-        retrieved_docs = global_retriever.invoke(question)
-
-        # Формируем контекст
-        docs_content = "\n\n".join([doc.page_content for doc in retrieved_docs])
-
-        # Генерируем ответ
-        prompt = f"""
-        Ты - помощник IT-поддержки. Отвечай на вопросы пользователей на основе предоставленной базы знаний.
-        
-        База знаний:
-        {docs_content}
-        
-        Вопрос пользователя: {question}
-        
-        Ответь максимально подробно и полезно. Если в базе знаний нет информации, честно скажи об этом.
-        """
-
-        response = global_gigachat.chat(prompt)
-        return response.choices[0].message.content
-
-    except Exception as e:
-        return f"Ошибка генерации ответа: {str(e)}"
 
 
 def classify_question(question: str):
@@ -212,10 +170,9 @@ async def stream_question(messages: List[dict]):
             Ты - помощник IT-поддержки. Отвечай на основе базы знаний:
             {docs_content}.
 
-            У тебя есть возможность вызывать на Frontend кнопки для различных действий:
+            У тебя есть возможность вызвать кнопку для смены пароля:
                 Функция для показа кнопки СМЕНА ПАРОЛЯ, чтобы ее вызвать добавь в сообщение которое ты сгенерируешь добавь <ChangePassword /> (но добавь ее в самом конце, чтобы в тексте оно не фигурировало, просто этот текст в конце без обьяснений)
-
-            Функцию надо вызывать, когда пользователь просит помочь ему с восстановлением, поиском сменой пароля в системе, но при этом также сгенерировать качественный ответ.
+                Функцию надо вызывать ТОЛЬКО ТОГДА, когда пользователь просит помочь ему с восстановлением, или сменой пароля в системе, но при этом также сгенерировать качественный ответ.
 
 
             Вопрос: {question}
@@ -231,54 +188,6 @@ async def stream_question(messages: List[dict]):
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
-
-
-@app.post("/question")
-async def process_question(messages: List[dict]):
-    """Обработка вопроса пользователя через LangGraph"""
-
-    # Проверяем, что есть сообщения
-    if not messages:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Список сообщений не может быть пустым"
-        )
-
-    # Берем последнее сообщение пользователя
-    last_message = messages[-1]
-
-    # Проверяем, что последнее сообщение от пользователя
-    if last_message.get("by") != "user":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Последнее сообщение должно быть от пользователя"
-        )
-
-    # Извлекаем вопрос
-    question = last_message.get("message", "").strip()
-    if not question:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Вопрос не может быть пустым"
-        )
-
-    try:
-        # Классифицируем вопрос
-        classification = classify_question(question)
-
-        # Обрабатываем вопрос через LangGraph RAG систему
-        answer = run_rag_system_fast(question)
-        
-        return {
-            "answer": answer,
-            "classification": classification
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка обработки вопроса: {str(e)}"
-        )
 
 
 @app.get("/")
