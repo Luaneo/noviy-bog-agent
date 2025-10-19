@@ -110,7 +110,7 @@ function FormattedMarkdown(props: React.ComponentProps<typeof Markdown>) {
 const typographyComponents: Parameters<typeof Markdown>[0]['components'] = {
   h1({ className, ...props }) {
     return (
-      <h1
+      <div
         className={
           "scroll-m-20 text-2xl font-extrabold tracking-tight text-wrap " + className
         }
@@ -120,7 +120,7 @@ const typographyComponents: Parameters<typeof Markdown>[0]['components'] = {
   },
   h2({ className, ...props }) {
     return (
-      <h2
+      <div
         className={"scroll-m-20 text-2xl font-bold tracking-tight text-wrap " + className}
         {...props}
       />
@@ -128,7 +128,7 @@ const typographyComponents: Parameters<typeof Markdown>[0]['components'] = {
   },
   h3({ className, ...props }) {
     return (
-      <h3
+      <div
         className={
           "scroll-m-20 text-2xl font-semibold tracking-tight text-wrap " + className
         }
@@ -138,7 +138,7 @@ const typographyComponents: Parameters<typeof Markdown>[0]['components'] = {
   },
   h4({ className, ...props }) {
     return (
-      <h4
+      <div
         className={
           "scroll-m-20 text-xl font-semibold tracking-tight text-wrap " + className
         }
@@ -148,7 +148,7 @@ const typographyComponents: Parameters<typeof Markdown>[0]['components'] = {
   },
   p({ className, ...props }) {
     return (
-      <p
+      <div
         className={"leading-7 [&:not(:first-child)]:mt-6 text-wrap " + className}
         {...props}
       />

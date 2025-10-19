@@ -21,9 +21,9 @@ function ChangePassword(props: any) {
     <Dialog>
       <form>
         <DialogTrigger asChild>
-          <Button variant="outline">Изменить пароль</Button>
+          <Button variant="outline" className="mt-4 mb-2">Изменить пароль</Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-[425px] mb-4">
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Изменение пароля</DialogTitle>
             <DialogDescription>
