@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,13 +17,16 @@ import { mdxComponent, MdxComponents } from "react-markdown-with-mdx";
 import z from "zod";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { CheckCircle2Icon } from "lucide-react";
+import { useState } from "react";
 
 function ChangePassword(props: any) {
   return (
     <Dialog>
       <form>
         <DialogTrigger asChild>
-          <Button variant="outline" className="mt-4 mb-2">Изменить пароль</Button>
+          <Button variant="outline" className="mt-4 mb-2 w-full">
+            Изменить пароль
+          </Button>
         </DialogTrigger>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -49,7 +54,7 @@ function ChangePassword(props: any) {
             <DialogClose asChild>
               <Button variant="outline">Отмена</Button>
             </DialogClose>
-            <Button type="submit">Подтвердить</Button>
+            <Button type="submit" disabled>Подтвердить</Button>
           </DialogFooter>
         </DialogContent>
       </form>
@@ -58,14 +63,24 @@ function ChangePassword(props: any) {
 }
 
 function TechSupport(props: any) {
-  return (
-    <Alert>
+  const [summoned, setSummoned] = useState<boolean>(false);
+
+  return summoned ? (
+    <Alert className="w-full mt-4 mb-2">
       <CheckCircle2Icon />
       <AlertTitle>Поддержка уже в пути</AlertTitle>
-      <AlertDescription>
-        Среднее время ответа – 5 минут.
-      </AlertDescription>
+      <AlertDescription>Среднее время ответа – 5 минут.</AlertDescription>
     </Alert>
+  ) : (
+    <Button
+      variant="outline"
+      className="mt-4 mb-2 w-full"
+      onClick={() => {
+        setTimeout(() => setSummoned(true), 200)
+      }}
+    >
+      Вызвать оператора
+    </Button>
   );
 }
 

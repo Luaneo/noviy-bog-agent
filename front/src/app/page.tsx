@@ -3,6 +3,7 @@
 import Logo from "@/components/logo";
 import MyMarkdown from "@/components/my-markdown";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
 import {
   InputGroup,
   InputGroupAddon,
@@ -10,12 +11,13 @@ import {
   InputGroupTextarea,
 } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
-import { ArrowUpIcon } from "lucide-react";
+import { ArrowUpIcon, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useRef, useState } from "react";
 import { twMerge } from "tailwind-merge";
 
 export default function Home() {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const sendMessageRef = useRef<HTMLButtonElement>(null);
   const [status, setStatus] = useState<"idle" | "pending" | "streaming">(
     "idle"
   );
@@ -23,6 +25,7 @@ export default function Home() {
     Array<{
       by: "user" | "agent";
       message: string;
+      liked?: boolean;
     }>
   >([
     {
@@ -32,7 +35,7 @@ export default function Home() {
     {
       by: "agent",
       message:
-        "# Привет!\nЯ — агент техподдержки.\n\nОпишите проблему и я помогу:\n- С доступом\n- С настройками ПО <ChangePassword />",
+        "# Привет!\nЯ — агент техподдержки.\n\nОпишите проблему и я помогу:\n- С доступом\n- С настройками ПО\n- С диагностикой ошибок\n- С поиском инструкций\n<TechSupport />",
     },
   ]);
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
@@ -121,7 +124,7 @@ export default function Home() {
 
   return (
     <div className="p-5 flex flex-col items-center min-h-[100vh] mb-44">
-      <div className="flex justify-between max-w-2xl w-full mb-5 fixed top-5">
+      <div className="flex justify-between max-w-2xl w-[calc(100%-40px)] py-5 fixed top-0 bg-background">
         <div>
           <Logo />
         </div>
@@ -134,6 +137,34 @@ export default function Home() {
               <>
                 <div className="max-w-[80%] bg-card py-3 px-5 rounded-2xl border-2 border-border rounded-bl-none leading-7 shadow-primary/10 shadow-lg">
                   <MyMarkdown>{message.message}</MyMarkdown>
+                </div>
+                <div className="flex items-end pl-2 gap-2">
+                  <Button
+                    variant={message.liked === true ? "outline" : "ghost"}
+                    onClick={() => {
+                      if (message.liked === true) {
+                        message.liked = undefined;
+                      } else {
+                        message.liked = true;
+                      }
+                      setMessages([...messages]);
+                    }}
+                  >
+                    <ThumbsUp />
+                  </Button>
+                  <Button
+                    variant={message.liked === false ? "outline" : "ghost"}
+                    onClick={() => {
+                      if (message.liked === false) {
+                        message.liked = undefined;
+                      } else {
+                        message.liked = false;
+                      }
+                      setMessages([...messages]);
+                    }}
+                  >
+                    <ThumbsDown />
+                  </Button>
                 </div>
                 <div className="flex-1" /> {/* spacer */}
               </>
@@ -166,11 +197,17 @@ export default function Home() {
         )}
       </div>
 
-      <div className="max-w-2xl w-[calc(100%-20px)] fixed bottom-5">
+      <div className="max-w-2xl w-[calc(100%-40px)] fixed bottom-5">
         <InputGroup className="!bg-card shadow-primary/25 shadow-md">
           <InputGroupTextarea
             placeholder="Вопрос агенту техподдержки"
             ref={textAreaRef}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && status === "idle") {
+                e.preventDefault();
+                sendMessageRef.current?.click();
+              }
+            }}
           />
           <InputGroupAddon align="inline-end">
             <InputGroupButton
@@ -181,6 +218,7 @@ export default function Home() {
               )}
               size="icon-xs"
               onClick={status === "idle" ? sendQuestion : () => {}}
+              ref={sendMessageRef}
             >
               <ArrowUpIcon />
               <span className="sr-only">Отправить</span>
